@@ -1,0 +1,19 @@
+# =============================================================================
+# rpi_brain/requirements.txt — Raspberry Pi 4 (2 GB) offline assistant
+# Install:  pip install --no-cache-dir -r requirements.txt
+# =============================================================================
+
+# --- Audio / Speech ---
+vosk==0.3.45
+sounddevice==0.4.6
+numpy==1.24.4
+
+# --- Speaker Verification ---
+onnxruntime==1.16.3           # CPU-only; avoid onnxruntime-gpu on RPi
+
+# --- Vision ---
+mediapipe==0.10.9             # BlazeFace face detection
+opencv-python-headless==4.8.1.78  # headless = no GUI deps on RPi Lite
+
+# --- Utilities ---
+psutil==5.9.7                 # RAM / process monitoring

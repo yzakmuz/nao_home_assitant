@@ -1,0 +1,42 @@
+# =========================
+# Python & Virtual Env
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.env
+
+# =========================
+# AI Models & Weights 
+# (DO NOT commit heavy models)
+# =========================
+*.onnx
+*.tflite
+*.pt
+vosk-model*/
+models/*
+!models/.gitkeep
+
+# =========================
+# Audio & Voice Signatures
+# =========================
+master_signature.npy
+*.wav
+*.mp3
+
+# =========================
+# Logs & Testing
+# =========================
+*.log
+test_output/
+.pytest_cache/
+
+# =========================
+# IDEs & OS Files
+# =========================
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
