@@ -360,7 +360,7 @@ def main():
     # Wake up the robot
     print("[server] Waking up NAO ...")
     try:
-        motions.safe_wake_up(proxies.motion, proxies.posture)
+        motions.safe_wake_up_seated(proxies.motion, proxies.posture)
         proxies.tts.say("Server started. Waiting for brain.")
     except Exception as exc:
         print("[server] WARNING: Could not wake up NAO: %s" % exc)
@@ -375,7 +375,11 @@ def main():
     finally:
         print("[server] Resting NAO ...")
         try:
-            motions.safe_rest(proxies.motion, proxies.posture)
+            current_pos = proxies.posture.getPosture()
+            if current_pos == "Sit":
+                proxies.motion.rest()
+            else:  
+                motions.safe_rest(proxies.motion, proxies.posture)
         except Exception:
             pass
 

@@ -12,6 +12,10 @@ Python 2.7 / NAOqi compatible.
 import time
 import math
 
+def safe_wake_up_seated(motion, posture):
+    motion.wakeUp()
+    posture.goToPosture("Sit", 0.5)
+
 
 def safe_wake_up(motion, posture):
     """Ensure the robot is awake and standing."""
