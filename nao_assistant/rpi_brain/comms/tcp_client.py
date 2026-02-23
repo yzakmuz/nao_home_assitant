@@ -49,6 +49,7 @@ class NaoTcpClient:
         self._lock = threading.RLock()
         self._connected = threading.Event()
         self._recv_buf = b""
+        self._recv_buf_max = 65536  # הגנה מפני קריסת זיכרון (64KB MAX)
         
 
     # ------------------------------------------------------------------
@@ -160,6 +161,16 @@ class NaoTcpClient:
                 if not chunk:
                     raise ConnectionError("Server closed connection")
                 self._recv_buf += chunk
+                
+                # --- בדיקת הגנת זיכרון קריטית ---
+                if len(self._recv_buf) > self._recv_buf_max:
+                    log.error(
+                        "Receive buffer overflow (%d bytes) — likely malformed data. Disconnecting.",
+                        len(self._recv_buf)
+                    )
+                    self._cleanup_socket()
+                    raise ConnectionError("Buffer overflow — possible malformed data from server")
+
             line, self._recv_buf = self._recv_buf.split(b"\n", 1)
             reply = json.loads(line.decode("utf-8"))
             log.debug("RX ← %s", reply)

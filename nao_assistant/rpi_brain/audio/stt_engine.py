@@ -56,8 +56,8 @@ class SttEngine:
 
     def wait_for_wake_word(self, mic) -> str:
         """
-        Block until the wake word is detected.
-        Returns the full partial/final text that contained the wake word.
+        Block until the wake word is detected (in a final result).
+        Returns the full final text that contained the wake word.
         """
         rec = self._new_recognizer()
         log.info("Listening for wake word '%s' …", WAKE_WORD)
@@ -71,16 +71,20 @@ class SttEngine:
                 result = json.loads(rec.Result())
                 text = result.get("text", "").strip().lower()
                 if WAKE_WORD in text:
-                    log.info("Wake word detected: '%s'", text)
-                    return text
+                    log.info("Wake word detected (final): '%s'", text)
+                    return text  # ✅ Final result — safe to return
+                else:
+                    # Final result but no wake word — reset and continue listening
+                    log.debug("Got final result but no wake word: '%s'", text)
+                    rec.Reset()
             else:
+                # Partial result — check but don't return
                 partial = json.loads(rec.PartialResult())
                 ptext = partial.get("partial", "").strip().lower()
                 if WAKE_WORD in ptext:
-                    log.info("Wake word (partial): '%s'", ptext)
-                    # Drain the rest of the partial into a final
-                    rec.Reset()
-                    return ptext
+                    log.debug("Wake word (partial): '%s' — continuing to listen...", ptext)
+                    # ✅ Keep recording; don't return or reset yet!
+                    # This allows the user to continue speaking their command
 
     def listen_command(
         self,

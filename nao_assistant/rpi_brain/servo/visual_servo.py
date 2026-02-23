@@ -100,11 +100,11 @@ class VisualServoController:
     """
 
     def __init__(
-        self,
-        camera: Camera,
-        face_tracker: FaceTracker,
-        tcp_client: NaoTcpClient,
-    ) -> None:
+    self,
+    camera: Camera,
+    face_tracker: FaceTracker,
+    tcp_client: NaoTcpClient,
+) -> None:
         self._camera = camera
         self._face_tracker = face_tracker
         self._tcp = tcp_client
@@ -125,6 +125,9 @@ class VisualServoController:
 
         # Lost-face counter
         self._frames_without_face = 0
+        
+        # Protect PID and angle state from race conditions
+        self._servo_lock = threading.RLock()
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -135,11 +138,12 @@ class VisualServoController:
         if self._running:
             return
         self._running = True
-        self._pid_yaw.reset()
-        self._pid_pitch.reset()
-        self._head_yaw = 0.0
-        self._head_pitch = 0.0
-        self._frames_without_face = 0
+        with self._servo_lock:
+            self._pid_yaw.reset()
+            self._pid_pitch.reset()
+            self._head_yaw = 0.0
+            self._head_pitch = 0.0
+            self._frames_without_face = 0
 
         # Command NAO to center head
         self._tcp.send_fire_and_forget(
@@ -257,12 +261,11 @@ class VisualServoController:
                 self._head_yaw, turn_dir * BODY_TURN_SPEED,
             )
 
-    def _on_face_lost(self) -> None:
-        """Called when face hasn't been seen for several frames."""
-        self._pid_yaw.reset()
-        self._pid_pitch.reset()
-        # Stop body movement but keep head where it is
-        self._tcp.send_fire_and_forget({"action": "stop_walk"})
-        # Reset counter to avoid spamming stop commands
-        self._frames_without_face = 0
-        log.debug("Face lost — PIDs reset, body stopped.")
+        def _on_face_lost(self) -> None:
+            """Called when face hasn't been seen for several frames."""
+            with self._servo_lock:
+                self._pid_yaw.reset()
+                self._pid_pitch.reset()
+                self._frames_without_face = 0
+            self._tcp.send_fire_and_forget({"action": "stop_walk"})
+            log.debug("Face lost — PIDs reset, body stopped.")

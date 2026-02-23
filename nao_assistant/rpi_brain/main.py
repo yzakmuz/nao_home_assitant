@@ -6,26 +6,6 @@ Finite-State-Machine orchestrator that ties together every subsystem:
     Audio (Vosk STT, Speaker Verification) ←→ Command Parser
     Vision (Camera, FaceTracker, YOLO)     ←→ Visual Servo
     Comms (TCP Client)                     ←→ NAO Body
-
-State diagram:
-    ┌──────┐  wake word   ┌───────────┐  utterance   ┌───────────┐
-    │ IDLE │─────────────→│ LISTENING │────────────→│ VERIFYING │
-    └──┬───┘              └───────────┘              └─────┬─────┘
-       │ face tracking                                     │
-       │ always active                      ┌──── reject ──┘
-       │                                    │       accept
-       │                              ┌─────┴─────┐
-       │                              │ EXECUTING │
-       │                              └─────┬─────┘
-       │           ┌────────────────────────┤
-       │           │ "find X"          other commands
-       │     ┌─────┴──────┐                 │
-       │     │ SEARCHING  │                 │
-       │     │ (YOLO on)  │                 │
-       │     └─────┬──────┘                 │
-       │           │ found / timeout        │
-       └───────────┴────────────────────────┘
-                     → back to IDLE
 """
 
 from __future__ import annotations
@@ -36,6 +16,8 @@ import sys
 import time
 from enum import Enum, auto
 from typing import List, Optional
+
+import numpy as np  # חובה בשביל אתחול השמע
 
 import settings
 from audio.mic_stream import MicStream
@@ -102,6 +84,14 @@ class AssistantApp:
 
         # -- Object Detector (lazy) --
         self._detector: Optional[ObjectDetector] = None
+
+        # --- FIX #3: אתחול מראש כדי למנוע קריסת חסר-משתנה ---
+        self._recorded_audio: np.ndarray = np.array([], dtype=np.float32)
+        self._pending_text: str = ""
+        self._current_intent: Intent = Intent(
+            type=IntentType.UNKNOWN,
+            raw_text=""
+        )
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -269,22 +259,31 @@ class AssistantApp:
         if self._state == State.EXECUTING:
             self._state = State.IDLE
 
-    def _handle_searching(self) -> None:
-        """YOLO-powered object search loop."""
-        intent: Intent = self._current_intent
-        target_name = intent.params.get("target_name", "object")
-        coco_classes: List[str] = intent.params.get("coco_classes", [])
+        def _handle_searching(self) -> None:
+            """YOLO-powered object search loop."""
+            intent: Intent = self._current_intent
+            target_name = intent.params.get("target_name", "object")
+            coco_classes: List[str] = intent.params.get("coco_classes", [])
 
-        self._tcp.send_fire_and_forget(
-            {"action": "say", "text": f"Looking for your {target_name}."}
-        )
+            if self._detector is not None:
+                log.warning("Previous YOLO detector still loaded — force unloading.")
+                try:
+                    self._detector.unload()
+                except Exception as exc:
+                    log.error("Error unloading previous detector: %s", exc)
+                self._detector = None
+                force_gc()
 
-        # Dynamically load YOLO
-        log_memory("pre-yolo-load")
-        detector = ObjectDetector()
-        detector.load()
-        self._detector = detector
-        log_memory("post-yolo-load")
+            self._tcp.send_fire_and_forget(
+                {"action": "say", "text": f"Looking for your {target_name}."}
+            )
+
+            # Dynamically load YOLO
+            log_memory("pre-yolo-load")
+            detector = ObjectDetector()
+            detector.load()
+            self._detector = detector
+            log_memory("post-yolo-load")
 
         found = False
         deadline = time.monotonic() + settings.YOLO_MAX_SEARCH_SECONDS
@@ -363,8 +362,6 @@ class AssistantApp:
         self._tcp.send_command(
             {"action": "say", "text": "Okay, I will follow you."}
         )
-        # Servo is already running; it will naturally follow the face.
-        # Ensure body-following is active (servo handles this).
         if not self._servo.is_running:
             self._servo.start()
 
@@ -372,12 +369,10 @@ class AssistantApp:
         self._servo.stop()
         self._tcp.send_command({"action": "stop_walk"})
         self._tcp.send_command({"action": "say", "text": "Stopping."})
-        # Restart passive face tracking after a beat
         time.sleep(0.5)
         self._servo.start()
 
     def _exec_find_object(self, intent: Intent) -> None:
-        # Pause face-tracking servo during search
         self._servo.stop()
         self._state = State.SEARCHING
 
@@ -401,7 +396,6 @@ class AssistantApp:
         self._servo.start()
 
     def _exec_what_do_you_see(self, intent: Intent) -> None:
-        """One-shot YOLO detection to describe the scene."""
         self._tcp.send_fire_and_forget(
             {"action": "say", "text": "Let me take a look."}
         )

@@ -2,29 +2,6 @@
 # -*- coding: utf-8 -*-
 """
 server.py -- NAO V5 TCP Server (Python 2.7 / NAOqi).
-
-Listens for newline-delimited JSON commands from the Raspberry Pi
-and dispatches them to the appropriate NAOqi ALProxy calls.
-
-Protocol:
-    RX: {"action": "say", "text": "Hello"}\\n
-    TX: {"status": "ok"}\\n   or   {"status": "error", "message": "..."}\\n
-
-Supported actions:
-    say             - ALTextToSpeech
-    animated_say    - ALAnimatedSpeech
-    move_head       - ALMotion.setAngles (absolute yaw/pitch)
-    move_head_relative - ALMotion.setAngles (delta yaw/pitch)
-    walk_toward     - ALMotion.moveTo
-    stop_walk       - ALMotion.stopMove
-    animate         - Named animation (wave, dance)
-    pose            - Go to named posture (sit, stand)
-    rest            - Safe rest
-    wake_up         - Wake up and stand
-
-Usage on NAO:
-    $ python server.py
-    $ python server.py --port 5555 --nao-ip 127.0.0.1
 """
 
 import json
@@ -36,14 +13,13 @@ import traceback
 
 # -- NAOqi imports (ONLY available on the NAO itself) --
 from naoqi import ALProxy
-
 import motion_library as motions
 
 # ======================================================================
-# Configuration (override via CLI args if needed)
+# Configuration
 # ======================================================================
 DEFAULT_PORT = 5555
-DEFAULT_NAO_IP = "127.0.0.1"  # localhost on the NAO
+DEFAULT_NAO_IP = "127.0.0.1"
 MSG_DELIMITER = "\n"
 BUFFER_SIZE = 4096
 
@@ -52,8 +28,6 @@ BUFFER_SIZE = 4096
 # NAOqi Proxy Manager
 # ======================================================================
 class NaoProxies(object):
-    """Lazy-initialized container for all NAOqi service proxies."""
-
     def __init__(self, nao_ip):
         self.ip = nao_ip
         self._motion = None
@@ -97,8 +71,6 @@ class NaoProxies(object):
 # Command Dispatcher
 # ======================================================================
 class CommandDispatcher(object):
-    """Maps JSON action strings to NAOqi calls."""
-
     def __init__(self, proxies):
         self.px = proxies
         self._handlers = {
@@ -113,11 +85,11 @@ class CommandDispatcher(object):
             "rest":               self._handle_rest,
             "wake_up":            self._handle_wake_up,
         }
+        # מעקב אחרי תהליכונים כדי למנוע קריסה בסגירה
+        self._active_threads = []
+        self._thread_lock = threading.Lock()
 
     def dispatch(self, command):
-        """
-        Execute a command dict. Returns a response dict.
-        """
         action = command.get("action")
         if action is None:
             return {"status": "error", "message": "Missing 'action' field."}
@@ -133,8 +105,38 @@ class CommandDispatcher(object):
             traceback.print_exc()
             return {"status": "error", "action": action, "message": repr(exc)}
 
-    # -- Individual handlers ------------------------------------------
+    # -- מנגנון חכם להרצת תנועות מבלי לתקוע את השרת --
+    def _spawn_motion_thread(self, target, args):
+        t = threading.Thread(target=target, args=args)
+        t.daemon = False
+        with self._thread_lock:
+            self._active_threads.append(t)
+        t.start()
 
+    def shutdown_threads(self):
+        with self._thread_lock:
+            threads = list(self._active_threads)
+        
+        try:
+            print("[server] Stopping all motions...")
+            self.px.motion.stopMove()
+        except:
+            pass
+        
+        joined = 0
+        for t in threads:
+            t.join(timeout=5.0)
+            if not t.is_alive():
+                joined += 1
+        
+        print("[server] %d/%d thread(s) joined." % (joined, len(threads)))
+        
+        with self._thread_lock:
+            for t in threads:
+                if t.is_alive():
+                    t.daemon = True
+
+    # -- Handlers --
     def _handle_say(self, cmd):
         text = cmd.get("text", "")
         if text:
@@ -163,13 +165,7 @@ class CommandDispatcher(object):
         x = cmd.get("x", 0.0)
         y = cmd.get("y", 0.0)
         theta = cmd.get("theta", 0.0)
-        # Run in a thread so the server isn't blocked during the walk
-        t = threading.Thread(
-            target=motions.walk_toward,
-            args=(self.px.motion, x, y, theta),
-        )
-        t.daemon = True
-        t.start()
+        self._spawn_motion_thread(motions.walk_toward, args=(self.px.motion, x, y, theta))
 
     def _handle_stop_walk(self, cmd):
         motions.stop_walk(self.px.motion)
@@ -183,10 +179,7 @@ class CommandDispatcher(object):
         func = anim_map.get(name)
         if func is None:
             raise ValueError("Unknown animation: %s" % name)
-        # Run animation in a thread so it doesn't block the socket
-        t = threading.Thread(target=func, args=(self.px.motion,))
-        t.daemon = True
-        t.start()
+        self._spawn_motion_thread(func, args=(self.px.motion,))
 
     def _handle_pose(self, cmd):
         motions.stop_walk(self.px.motion)
@@ -198,44 +191,26 @@ class CommandDispatcher(object):
         func = pose_map.get(name)
         if func is None:
             raise ValueError("Unknown pose: %s" % name)
-        t = threading.Thread(
-            target=func,
-            args=(self.px.motion, self.px.posture),
-        )
-        t.daemon = True
-        t.start()
+        self._spawn_motion_thread(func, args=(self.px.motion, self.px.posture))
 
     def _handle_rest(self, cmd):
         motions.stop_walk(self.px.motion)
-        t = threading.Thread(
-            target=motions.safe_rest,
-            args=(self.px.motion, self.px.posture),
-        )
-        t.daemon = True
-        t.start()
+        self._spawn_motion_thread(motions.safe_rest, args=(self.px.motion, self.px.posture))
 
     def _handle_wake_up(self, cmd):
-        t = threading.Thread(
-            target=motions.safe_wake_up,
-            args=(self.px.motion, self.px.posture),
-        )
-        t.daemon = True
-        t.start()
+        self._spawn_motion_thread(motions.safe_wake_up, args=(self.px.motion, self.px.posture))
 
 
 # ======================================================================
 # TCP Server
 # ======================================================================
 class TcpServer(object):
-    """Single-client TCP server with newline-delimited JSON protocol."""
-
     def __init__(self, port, dispatcher):
-        self.port = port
-        self.dispatcher = dispatcher
-        self._running = False
+         self.port = port
+         self.dispatcher = dispatcher
+         self._running = False
 
     def start(self):
-        """Bind, listen, and accept one client at a time (blocking)."""
         srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         srv.bind(("0.0.0.0", self.port))
@@ -257,12 +232,13 @@ class TcpServer(object):
             self._handle_client(conn, addr)
             print("[server] Client disconnected: %s:%d" % addr)
 
+        # סגירה בטוחה של כל התהליכונים כשהשרת יורד
+        self.dispatcher.shutdown_threads()
         srv.close()
         print("[server] Server shut down.")
 
     def _handle_client(self, conn, addr):
-        """Read newline-delimited JSON messages from a single client."""
-        conn.settimeout(None)  # blocking reads
+        conn.settimeout(None)
         buf = b""
         disconnected = False
 
@@ -277,11 +253,10 @@ class TcpServer(object):
 
             buf += data
 
-            if len(buf) > BUFFER_SIZE * 16:  # e.g. 64KB max
+            if len(buf) > BUFFER_SIZE * 16:
                 print("[server] Buffer overflow from %s:%d, dropping connection." % addr)
                 break
 
-            # Process all complete messages in the buffer
             while b"\n" in buf:
                 raw_line, buf = buf.split(b"\n", 1)
                 
@@ -296,7 +271,8 @@ class TcpServer(object):
                         conn.sendall(resp_bytes)
                     except socket.error:
                         disconnected = True
-                    break
+                    continue
+                
                 line = line.strip()
                 if not line:
                     continue
@@ -309,12 +285,10 @@ class TcpServer(object):
                     command = parsed
                 except ValueError as exc:
                     response = {"status": "error", "message": repr(exc)}
-
                 else:
                     print("[server] RX: %s" % json.dumps(command))
                     response = self.dispatcher.dispatch(command)
 
-                # Send response
                 no_ack = command.get("no_ack", False) if command is not None else False
                 if not no_ack:
                     resp_bytes = (
@@ -339,7 +313,6 @@ def main():
     port = DEFAULT_PORT
     nao_ip = DEFAULT_NAO_IP
 
-    # Simple CLI arg parsing (no argparse to keep Py2.7 minimal)
     args = sys.argv[1:]
     i = 0
     while i < len(args):
@@ -354,10 +327,8 @@ def main():
 
     print("[server] NAO IP: %s | Listen port: %d" % (nao_ip, port))
 
-    # Initialize NAOqi proxies
     proxies = NaoProxies(nao_ip)
 
-    # Wake up the robot
     print("[server] Waking up NAO ...")
     try:
         motions.safe_wake_up_seated(proxies.motion, proxies.posture)
@@ -365,7 +336,6 @@ def main():
     except Exception as exc:
         print("[server] WARNING: Could not wake up NAO: %s" % exc)
 
-    # Start TCP server (blocks)
     dispatcher = CommandDispatcher(proxies)
     server = TcpServer(port, dispatcher)
     try:
@@ -382,7 +352,6 @@ def main():
                 motions.safe_rest(proxies.motion, proxies.posture)
         except Exception:
             pass
-
 
 if __name__ == "__main__":
     main()
