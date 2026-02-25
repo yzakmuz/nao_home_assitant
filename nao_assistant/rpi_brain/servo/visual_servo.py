@@ -189,7 +189,13 @@ class VisualServoController:
                 time.sleep(SERVO_LOOP_INTERVAL_S)
                 continue
 
-            face = self._face_tracker.detect(frame)
+            try:
+                face = self._face_tracker.detect(frame)
+            except Exception as exc:
+                log.error("Face tracker crashed: %s — skipping frame", exc)
+                self._frames_without_face += 1
+                time.sleep(SERVO_LOOP_INTERVAL_S)
+                continue
 
             if face is not None:
                 self._frames_without_face = 0

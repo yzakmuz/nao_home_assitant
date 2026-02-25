@@ -41,6 +41,7 @@ class MicStream:
         self._recording = False
         self._rec_lock = threading.Lock()
         self._rec_chunks: list[bytes] = []
+        self._rec_chunks_max = int(MIC_SAMPLE_RATE * 5.0 / MIC_CHUNK_FRAMES)  # max 5 sec worth
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -144,8 +145,13 @@ class MicStream:
         except queue.Full:
             pass
 
-        # Accumulate for speaker verification
+        # Accumulate for speaker verification with buffer limit
         if self._recording:
             with self._rec_lock:
                 if self._recording:
-                    self._rec_chunks.append(raw)
+                    if len(self._rec_chunks) < self._rec_chunks_max:
+                        self._rec_chunks.append(raw)
+                    else:
+                        log.warning("Recording buffer at limit (5s) — dropping oldest chunks.")
+                        self._rec_chunks.pop(0)
+                        self._rec_chunks.append(raw)

@@ -278,12 +278,21 @@ class AssistantApp:
                 {"action": "say", "text": f"Looking for your {target_name}."}
             )
 
-            # Dynamically load YOLO
-            log_memory("pre-yolo-load")
-            detector = ObjectDetector()
-            detector.load()
-            self._detector = detector
-            log_memory("post-yolo-load")
+        # Check available memory before loading YOLO
+        log_memory("pre-yolo-load")
+        if check_pressure() == "critical" or available_mb() < 150:
+            log.error("Insufficient memory to load YOLO (need 150 MB available, have %.0f MB).", available_mb())
+            self._tcp.send_fire_and_forget(
+                {"action": "say", "text": f"Sorry, not enough memory to search for your {target_name} right now."}
+            )
+            self._state = State.IDLE
+            return
+
+        # Dynamically load YOLO
+        detector = ObjectDetector()
+        detector.load()
+        self._detector = detector
+        log_memory("post-yolo-load")
 
         found = False
         deadline = time.monotonic() + settings.YOLO_MAX_SEARCH_SECONDS
