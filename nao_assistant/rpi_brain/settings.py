@@ -20,6 +20,7 @@ MSG_DELIMITER = b"\n"  # newline-delimited JSON framing
 # ---------------------------------------------------------------------------
 # Audio — Microphone & Vosk STT
 # ---------------------------------------------------------------------------
+MIC_NATIVE_RATE = 44100
 MIC_SAMPLE_RATE = 16000
 MIC_CHANNELS = 1
 MIC_CHUNK_FRAMES = 4000        # 250 ms per chunk at 16 kHz
