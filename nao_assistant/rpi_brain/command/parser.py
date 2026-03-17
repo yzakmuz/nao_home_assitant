@@ -37,6 +37,9 @@ class IntentType(Enum):
     COME_HERE = auto()
     INTRODUCE = auto()
     DANCE = auto()
+    IM_OKAY = auto()
+    BRING_OBJECT = auto()
+    GO_TO_OBJECT = auto()
     UNKNOWN = auto()
 
 
@@ -72,6 +75,19 @@ def _extract_find_target(text: str) -> Dict[str, Any]:
     return {"target_name": "object", "coco_classes": []}
 
 
+def _extract_bring_target(text: str) -> Dict[str, Any]:
+    """Extract the object name from 'bring me my <object>' phrases.
+
+    If no specific object is named (e.g., "bring it to me"), returns
+    an empty target_name — the executor uses the last found object.
+    """
+    for friendly_name in YOLO_TARGET_CLASSES:
+        if friendly_name in text:
+            return {"target_name": friendly_name}
+    # Generic "bring it to me" / "pick it up" — no specific object
+    return {"target_name": ""}
+
+
 # Static phrase → intent mappings
 _PHRASE_MAP = {
     "follow me":            (IntentType.FOLLOW_ME, None),
@@ -87,6 +103,10 @@ _PHRASE_MAP = {
     "come here":            (IntentType.COME_HERE, None),
     "introduce yourself":   (IntentType.INTRODUCE, None),
     "dance":                (IntentType.DANCE, None),
+    "i'm okay":             (IntentType.IM_OKAY, None),
+    "im okay":              (IntentType.IM_OKAY, None),
+    "i am okay":            (IntentType.IM_OKAY, None),
+    "go to it":             (IntentType.GO_TO_OBJECT, None),
 }
 
 
@@ -116,6 +136,15 @@ def parse_command(raw_text: str) -> Intent:
             params.get("target_name"), text,
         )
         return Intent(type=IntentType.FIND_OBJECT, raw_text=raw_text, params=params)
+
+    # Check "bring me" / "bring it" / "pick it up" pattern
+    if "bring" in text or "pick it up" in text:
+        params = _extract_bring_target(text)
+        log.info(
+            "Parsed intent: BRING_OBJECT target='%s' (from '%s')",
+            params.get("target_name", "last"), text,
+        )
+        return Intent(type=IntentType.BRING_OBJECT, raw_text=raw_text, params=params)
 
     log.info("Unknown command: '%s'", text)
     return Intent(type=IntentType.UNKNOWN, raw_text=raw_text)

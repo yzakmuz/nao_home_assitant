@@ -44,6 +44,9 @@ class SttEngine:
         self._grammar = json.dumps(GRAMMAR_PHRASES)
         log.info("Grammar loaded: %d phrases.", len(GRAMMAR_PHRASES))
 
+        # Live partial text for dashboard display
+        self.last_partial: str = ""
+
     def _new_recognizer(self) -> KaldiRecognizer:
         """Create a fresh recognizer with the grammar vocabulary."""
         rec = KaldiRecognizer(self._model, MIC_SAMPLE_RATE, self._grammar)
@@ -81,6 +84,7 @@ class SttEngine:
                 # Partial result — check but don't return
                 partial = json.loads(rec.PartialResult())
                 ptext = partial.get("partial", "").strip().lower()
+                self.last_partial = ptext
                 if WAKE_WORD in ptext:
                     log.debug("Wake word (partial): '%s' — continuing to listen...", ptext)
                     # ✅ Keep recording; don't return or reset yet!
@@ -120,6 +124,7 @@ class SttEngine:
                 ptext = partial.get("partial", "").strip().lower()
                 if ptext and ptext != last_partial:
                     last_partial = ptext
+                    self.last_partial = ptext
                     silence_start = None
                 elif ptext and silence_start is None:
                     silence_start = time.monotonic()

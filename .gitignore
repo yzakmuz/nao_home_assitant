@@ -7,29 +7,32 @@ __pycache__/
 venv/
 env/
 .env
+sim_venv/
 
 # =========================
-# AI Models & Weights 
-# (DO NOT commit heavy models)
+# AI Models & Weights
+# (All project models are kept in the repo)
+# Only ignore downloaded/cached models from external tools
 # =========================
-*.onnx
-*.tflite
-*.pt
-vosk-model*/
-models/*
-!models/.gitkeep
+Simulation/pretrained_models/
 
 # =========================
-# Audio & Voice Signatures
+# Raw Data (audio, images)
 # =========================
-master_signature.npy
 *.wav
 *.mp3
+*.jpg
+*.jpeg
+*.png
+*.bmp
+Simulation/data/
 
 # =========================
 # Logs & Testing
 # =========================
 *.log
+*.jsonl
+Simulation/logs/
 test_output/
 .pytest_cache/
 

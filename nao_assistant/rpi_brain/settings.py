@@ -17,6 +17,11 @@ TCP_RECONNECT_DELAY_S = float(os.getenv("TCP_RECONNECT_DELAY_S", "3.0"))
 TCP_BUFFER_SIZE = int(os.getenv("TCP_BUFFER_SIZE", "4096"))
 MSG_DELIMITER = b"\n"  # newline-delimited JSON framing
 
+# Connection Resilience (Phase 5)
+HEARTBEAT_INTERVAL_S = float(os.getenv("HEARTBEAT_INTERVAL_S", "2.0"))
+RECONNECT_MAX_RETRIES = int(os.getenv("RECONNECT_MAX_RETRIES", "20"))
+RECONNECT_BACKOFF_MAX_S = float(os.getenv("RECONNECT_BACKOFF_MAX_S", "30.0"))
+
 # ---------------------------------------------------------------------------
 # Audio — Microphone & Vosk STT
 # ---------------------------------------------------------------------------
@@ -52,6 +57,14 @@ GRAMMAR_PHRASES = [
     "come here",
     "introduce yourself",
     "dance",
+    "i'm okay",
+    "bring me my keys",
+    "bring me my phone",
+    "bring me my bottle",
+    "bring me my cup",
+    "bring it to me",
+    "pick it up",
+    "go to it",
     "[unk]",  # Vosk unknown-word bucket
 ]
 
@@ -74,6 +87,11 @@ SPEAKER_VERIFY_THRESHOLD = float(
 
 # Minimum audio duration (seconds) required for reliable embedding
 SPEAKER_MIN_AUDIO_S = float(os.getenv("SPEAKER_MIN_AUDIO_S", "1.0"))
+
+# Multi-speaker mode: accept commands from ANY enrolled speaker (not just master).
+# When False, only the master embedding is checked (original behavior).
+# When True, all *_embedding.npy files in the models dir are loaded and checked.
+MULTI_SPEAKER_MODE = os.getenv("MULTI_SPEAKER_MODE", "true").lower() in ("true", "1", "yes")
 
 # ---------------------------------------------------------------------------
 # Vision — Pi Camera
@@ -150,6 +168,20 @@ YOLO_TARGET_CLASSES = {
     "book": ["book"],
     "bag": ["backpack", "handbag", "suitcase"],
 }
+
+# ---------------------------------------------------------------------------
+# Person Fall Detection (Improvement 4)
+# ---------------------------------------------------------------------------
+FALL_DETECTION_ENABLED = os.getenv("FALL_DETECTION_ENABLED", "true").lower() in ("true", "1", "yes")
+FALL_MONITOR_RATE_HZ = float(os.getenv("FALL_MONITOR_RATE_HZ", "5.0"))
+FALL_HEIGHT_RATIO_THRESHOLD = float(os.getenv("FALL_HEIGHT_RATIO_THRESHOLD", "0.50"))
+FALL_VELOCITY_THRESHOLD = float(os.getenv("FALL_VELOCITY_THRESHOLD", "0.30"))
+FALL_CONFIRMATION_FRAMES = int(os.getenv("FALL_CONFIRMATION_FRAMES", "5"))
+FALL_RECOVERY_RATIO = float(os.getenv("FALL_RECOVERY_RATIO", "0.80"))
+FALL_RECOVERY_FRAMES = int(os.getenv("FALL_RECOVERY_FRAMES", "10"))
+FALL_CALIBRATION_FRAMES = int(os.getenv("FALL_CALIBRATION_FRAMES", "10"))
+FALL_MIN_KEYPOINT_CONFIDENCE = float(os.getenv("FALL_MIN_KEYPOINT_CONFIDENCE", "0.5"))
+FALL_TORSO_ANGLE_THRESHOLD = float(os.getenv("FALL_TORSO_ANGLE_THRESHOLD", "75.0"))
 
 # ---------------------------------------------------------------------------
 # Memory Management

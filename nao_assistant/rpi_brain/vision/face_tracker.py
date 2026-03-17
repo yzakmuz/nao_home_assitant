@@ -87,6 +87,26 @@ class FaceTracker:
             confidence=float(confidence),
         )
 
+    def reset(self) -> None:
+        """Recreate the MediaPipe detector to clear stale timestamps.
+
+        MediaPipe's internal graph maintains a monotonically increasing
+        timestamp counter.  If the detector is idle for a long period
+        (e.g., during a bring-object sequence) and then reused, the
+        timestamps desync and the graph crashes permanently with:
+          ``Packet timestamp mismatch on a calculator``
+        Recreating the detector gives a fresh graph with clean state.
+        """
+        try:
+            self._detector.close()
+        except Exception:
+            pass
+        self._detector = mp.solutions.face_detection.FaceDetection(
+            model_selection=FACE_MODEL_SELECTION,
+            min_detection_confidence=FACE_MIN_DETECTION_CONFIDENCE,
+        )
+        log.info("FaceTracker reset (fresh MediaPipe graph).")
+
     def close(self) -> None:
         """Release MediaPipe resources."""
         self._detector.close()

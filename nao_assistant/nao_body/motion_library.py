@@ -72,8 +72,32 @@ def walk_toward(motion, x, y, theta):
 
 
 def stop_walk(motion):
-    """Immediately stop all locomotion."""
+    """Immediately stop ALL motions (emergency stop).
+
+    WARNING: This calls stopMove() which cancels head, arm, and leg
+    motions. Use stop_walk_only() to stop walking without affecting
+    the head or arms.
+    """
     motion.stopMove()
+
+
+def stop_walk_only(motion):
+    """Gracefully stop walking without affecting head or arm motions.
+
+    Uses moveToward(0,0,0) to decelerate the walk engine only.
+    Safe to call even when the robot is not walking (no-op).
+    """
+    try:
+        if motion.moveIsActive():
+            motion.moveToward(0.0, 0.0, 0.0)
+    except Exception:
+        pass
+
+
+def get_head_angles(motion):
+    """Return current (head_yaw, head_pitch) in radians."""
+    angles = motion.getAngles(["HeadYaw", "HeadPitch"], True)
+    return (angles[0], angles[1])
 
 
 def wave_animation(motion):
@@ -131,3 +155,92 @@ def go_to_sit(motion, posture):
 def go_to_stand(motion, posture):
     """Transition to standing posture."""
     posture.goToPosture("StandInit", 0.5)
+
+
+# ======================================================================
+# Object Pickup (Improvement 6)
+# ======================================================================
+
+def open_hand(motion, hand="right"):
+    """Open hand fingers (release grip)."""
+    joint = "RHand" if hand == "right" else "LHand"
+    motion.setAngles([joint], [1.0], 0.3)
+
+
+def close_hand(motion, hand="right"):
+    """Close hand fingers (grip object)."""
+    joint = "RHand" if hand == "right" else "LHand"
+    motion.setAngles([joint], [0.0], 0.3)
+
+
+def arm_carry_position(motion):
+    """Right arm carry position — hold object close to chest."""
+    names = ["RShoulderPitch", "RShoulderRoll", "RElbowYaw",
+             "RElbowRoll", "RWristYaw"]
+    angles = [0.8, -0.15, 1.0, -1.0, 0.0]
+    motion.setAngles(names, angles, 0.2)
+
+
+def arm_reach_down(motion):
+    """Extend right arm down and forward for ground pickup."""
+    names = ["RShoulderPitch", "RShoulderRoll", "RElbowYaw",
+             "RElbowRoll", "RWristYaw"]
+    angles = [0.8, -0.2, 1.2, -0.5, 0.0]
+    motion.setAngles(names, angles, 0.2)
+
+
+def arm_offer_position(motion):
+    """Extend right arm forward for offering object to person."""
+    names = ["RShoulderPitch", "RShoulderRoll", "RElbowYaw",
+             "RElbowRoll", "RWristYaw"]
+    angles = [0.3, -0.1, 1.0, -0.1, 0.0]
+    motion.setAngles(names, angles, 0.2)
+
+
+def arm_rest_position(motion):
+    """Return right arm to neutral standing position."""
+    names = ["RShoulderPitch", "RShoulderRoll", "RElbowYaw",
+             "RElbowRoll", "RWristYaw", "RHand"]
+    angles = [1.4, -0.2, 1.2, 0.5, 0.0, 0.3]
+    motion.setAngles(names, angles, 0.2)
+
+
+def pickup_sequence(motion, posture):
+    """Full pickup: open hand -> crouch -> reach -> grab -> lift -> stand."""
+    open_hand(motion)
+    time.sleep(0.5)
+    posture.goToPosture("Crouch", 0.4)
+    time.sleep(1.5)
+    arm_reach_down(motion)
+    time.sleep(1.0)
+    close_hand(motion)
+    time.sleep(0.5)
+    arm_carry_position(motion)
+    time.sleep(0.5)
+    posture.goToPosture("StandInit", 0.5)
+    time.sleep(2.0)
+
+
+def offer_and_release(motion):
+    """Offer object -> wait -> release -> rest arm."""
+    arm_offer_position(motion)
+    time.sleep(3.0)
+    open_hand(motion)
+    time.sleep(1.0)
+    arm_rest_position(motion)
+    time.sleep(0.5)
+
+
+def set_walk_velocity(motion, x, y, theta):
+    """Set continuous walk velocity (non-blocking).
+
+    Uses moveToward() which sets the walk engine to velocity mode.
+    The robot walks continuously at the given velocity until a new
+    velocity is set or stop_walk/stop_walk_only is called.
+
+    Args:
+        x:     Forward speed (0.0 to 1.0).
+        y:     Lateral speed (-1.0 to 1.0, positive = left).
+        theta: Rotational speed (-1.0 to 1.0, positive = CCW).
+    """
+    motion.moveToward(float(x), float(y), float(theta))

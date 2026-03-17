@@ -1,0 +1,20 @@
+# Core dependencies
+numpy>=1.24,<2.0
+opencv-python>=4.8
+psutil>=5.9
+
+# Audio
+vosk>=0.3.45
+sounddevice>=0.4.6
+
+# Speaker verification
+onnxruntime>=1.16
+
+# Face tracking (must be <0.10.20 -- later versions removed mp.solutions API)
+mediapipe>=0.10,<0.10.20
+
+# Object detection (PC replacement for tflite-runtime)
+ultralytics>=8.0
+
+# PC text-to-speech (optional -- simulation degrades gracefully without it)
+pyttsx3>=2.90
